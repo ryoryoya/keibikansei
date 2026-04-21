@@ -62,6 +62,7 @@ async function getDashboardData(orgId: string) {
 export default async function DashboardPage() {
   const session = await requireSession();
   const { projects, monthRevenue } = await getDashboardData(session.orgId);
+  const now = new Date();
 
   // サマリー集計
   const totalProjects = projects.length;
@@ -94,7 +95,7 @@ export default async function DashboardPage() {
     });
 
   // 上番遅延（案件開始時刻を過ぎても未打刻）
-  const nowHM = `${String(today.getHours()).padStart(2, "0")}:${String(today.getMinutes()).padStart(2, "0")}`;
+  const nowHM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
   projects.forEach((p) => {
     if (p.startTime > nowHM) return; // まだ開始前
     p.assignments
@@ -140,7 +141,7 @@ export default async function DashboardPage() {
         <SummaryCard
           title="今月の売上見込"
           value={`¥${monthRevenue.toLocaleString("ja-JP")}`}
-          subtitle={`${today.getMonth() + 1}月稼働ベース`}
+          subtitle={`${now.getMonth() + 1}月稼働ベース`}
           color="amber"
         />
       </div>
