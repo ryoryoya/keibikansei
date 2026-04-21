@@ -10,7 +10,7 @@ export async function getChatRooms() {
   if (session.isDemo) return [];
 
   return prisma.chatChannel.findMany({
-    where:   { orgId: session.orgId },
+    where: { orgId: session.orgId },
     include: {
       messages: {
         orderBy: { sentAt: "desc" },
@@ -18,7 +18,7 @@ export async function getChatRooms() {
         include: { sender: { select: { name: true } } },
       },
     },
-    orderBy: { updatedAt: "desc" },
+    orderBy: { createdAt: "desc" },
   });
 }
 
@@ -28,10 +28,10 @@ export async function getMessages(channelId: string, limit = 50) {
   if (session.isDemo) return [];
 
   return prisma.chatMessage.findMany({
-    where:   { channelId, channel: { orgId: session.orgId } },
+    where: { channelId, channel: { orgId: session.orgId } },
     include: { sender: { select: { id: true, name: true, role: true } } },
     orderBy: { sentAt: "asc" },
-    take:    limit,
+    take: limit,
   });
 }
 
@@ -51,7 +51,7 @@ export async function sendMessage(channelId: string, body: string) {
   // チャンネルの updatedAt を更新
   await prisma.chatChannel.update({
     where: { id: channelId },
-    data:  { updatedAt: new Date() },
+    data: { updatedAt: new Date() },
   });
 
   revalidatePath("/dashboard/chat");
@@ -70,8 +70,8 @@ export async function ensureBroadcastChannel() {
 
   return prisma.chatChannel.create({
     data: {
-      orgId:       session.orgId,
-      name:        "一斉連絡",
+      orgId: session.orgId,
+      name: "一斉連絡",
       channelType: "BROADCAST",
     },
   });
