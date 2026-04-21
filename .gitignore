@@ -40,3 +40,8 @@ prisma/migrations/
 # IDE
 .vscode/settings.json
 .idea/
+
+# Claude
+CLAUDE.md
+
+CLAUDE.md
