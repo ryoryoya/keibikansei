@@ -507,6 +507,7 @@ model ChatChannel {
   type      ChannelType @default(DIRECT)
   projectId String?     @unique @map("project_id") @db.Uuid
   createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
 
   org      Organization  @relation(fields: [orgId], references: [id])
   project  Project?      @relation(fields: [projectId], references: [id])
