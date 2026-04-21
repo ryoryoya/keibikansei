@@ -1,6 +1,9 @@
 import { requireSession } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
+// ユーザーごとに内容が変わるため、ビルド時の静的プリレンダを無効化
+export const dynamic = "force-dynamic";
+
 type StatusLabel = "稼働中" | "人員不足" | "待機中" | "完了";
 
 // ------------------------------------------------------------
