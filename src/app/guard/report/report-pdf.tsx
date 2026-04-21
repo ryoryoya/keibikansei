@@ -132,7 +132,7 @@ export function ReportPDF({ data, guardSig, clientSig, clientRepName, onClose, p
         <div className="grid grid-cols-2 gap-4">
           <div className="border border-gray-400 rounded p-3">
             <p className="text-xs font-bold text-gray-500 mb-1">警備員署名</p>
-            <p className="text-sm font-medium mb-2">{data.guardName}</p>
+            <p className="text-sm font-medium mb-2">{data.guards[0]?.name ?? ""}</p>
             <img src={guardSig} alt="警備員署名" className="h-14 border border-gray-200 rounded bg-white" />
           </div>
           <div className="border border-gray-400 rounded p-3">
