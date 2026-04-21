@@ -64,7 +64,7 @@ export async function ensureBroadcastChannel() {
   if (session.isDemo) return null;
 
   const existing = await prisma.chatChannel.findFirst({
-    where: { orgId: session.orgId, channelType: "BROADCAST" },
+    where: { orgId: session.orgId, type: "BROADCAST" },
   });
   if (existing) return existing;
 
@@ -72,7 +72,7 @@ export async function ensureBroadcastChannel() {
     data: {
       orgId: session.orgId,
       name: "一斉連絡",
-      channelType: "BROADCAST",
+      type: "BROADCAST",
     },
   });
 }
