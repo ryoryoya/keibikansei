@@ -24,12 +24,17 @@ const DEMO_SESSION: ServerSession = {
   isDemo: false,
 };
 
+// デモモードは NEXT_PUBLIC_ENABLE_DEMO=true の環境でのみ有効（本番では無効化）
+const DEMO_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEMO === "true";
+
 export async function getServerSession(): Promise<ServerSession | null> {
-  // デモCookieチェック（開発用バイパス）
-  const cookieStore = await cookies();
-  const demoSession = cookieStore.get("demo_session");
-  if (demoSession) {
-    return { ...DEMO_SESSION, role: demoSession.value === "guard" ? "GUARD" : "MANAGER" };
+  // デモCookieチェック（開発用バイパス） — 本番では環境変数で無効化
+  if (DEMO_ENABLED) {
+    const cookieStore = await cookies();
+    const demoSession = cookieStore.get("demo_session");
+    if (demoSession) {
+      return { ...DEMO_SESSION, role: demoSession.value === "guard" ? "GUARD" : "MANAGER" };
+    }
   }
 
   // Supabase Auth からユーザー取得

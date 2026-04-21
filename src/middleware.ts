@@ -13,10 +13,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // デモセッションCookieがあれば認証スキップ
-  const demoSession = request.cookies.get("demo_session");
-  if (demoSession) {
-    return NextResponse.next();
+  // デモセッションCookieがあれば認証スキップ（NEXT_PUBLIC_ENABLE_DEMO=true の場合のみ）
+  if (process.env.NEXT_PUBLIC_ENABLE_DEMO === "true") {
+    const demoSession = request.cookies.get("demo_session");
+    if (demoSession) {
+      return NextResponse.next();
+    }
   }
 
   // ============================================================
@@ -49,9 +51,12 @@ export async function middleware(request: NextRequest) {
   const isAuthPage =
     request.nextUrl.pathname.startsWith("/login") ||
     request.nextUrl.pathname.startsWith("/register");
+  // 認証不要パス: トップページ + 明示的 public API + デモログイン
+  // （/api/* 全体を public にすると、今後追加する API が認証バイパスされる）
   const isPublicPage =
     request.nextUrl.pathname === "/" ||
-    request.nextUrl.pathname.startsWith("/api/");
+    request.nextUrl.pathname.startsWith("/api/public/") ||
+    request.nextUrl.pathname.startsWith("/api/demo-login");
 
   if (!user && !isAuthPage && !isPublicPage) {
     const url = request.nextUrl.clone();

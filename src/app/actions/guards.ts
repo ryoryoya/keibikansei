@@ -10,6 +10,7 @@ const isUUID = (id?: string) =>
   !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
 // 日報・フォーム用：アクティブ隊員の id + name のみ取得
+// （GUARD も日報の立会人選択で使うため、role 制限はかけない。返却値は id + name のみで機密情報を含まない）
 export async function getActiveGuards(): Promise<{ id: string; name: string }[]> {
   const session = await requireSession();
   if (session.isDemo) return [];
@@ -26,6 +27,10 @@ export async function getActiveGuards(): Promise<{ id: string; name: string }[]>
 export async function getGuards() {
   const session = await requireSession();
   if (session.isDemo) return [];
+  // 個人情報（口座・基本給含む）は ADMIN/MANAGER のみ閲覧可能
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   return prisma.user.findMany({
     where: { orgId: session.orgId, role: { in: ["GUARD", "MANAGER"] } },
@@ -63,6 +68,16 @@ export type GuardInput = {
 export async function upsertGuard(input: GuardInput) {
   const session = await requireSession();
   if (session.isDemo) return { id: "demo" };
+  // ADMIN/MANAGER のみ隊員情報を作成・編集可能
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
+  // MANAGER は他ユーザーを MANAGER にできない（ADMIN 昇格と同等のため）
+  // ロール昇格は ADMIN のみ許可
+  const requestedRole = input.role ?? "GUARD";
+  if (requestedRole !== "GUARD" && session.role !== "ADMIN") {
+    throw new Error("Forbidden");
+  }
 
   const profileData = {
     birthDate:       input.birthDate ? new Date(input.birthDate) : undefined,
@@ -124,6 +139,22 @@ export async function upsertGuard(input: GuardInput) {
 export async function deactivateGuard(id: string) {
   const session = await requireSession();
   if (session.isDemo) return;
+  // ADMIN/MANAGER のみ隊員を無効化可能
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
+  // 自分自身を無効化できないようにする（ロックアウト防止）
+  if (id === session.userId) throw new Error("Forbidden");
+
+  // 対象ユーザーのロールを確認し、MANAGER は ADMIN のみ無効化可能
+  const target = await prisma.user.findFirst({
+    where: { id, orgId: session.orgId },
+    select: { role: true },
+  });
+  if (!target) throw new Error("Not Found");
+  if (target.role === "ADMIN" || target.role === "MANAGER") {
+    if (session.role !== "ADMIN") throw new Error("Forbidden");
+  }
 
   await prisma.user.update({
     where: { id, orgId: session.orgId },

@@ -24,6 +24,10 @@ export type AssignmentPageData = {
 export async function getAssignmentPageData(year: number, month: number): Promise<AssignmentPageData> {
   const session = await requireSession();
   if (session.isDemo) return { projects: [], guards: [], assignments: [], shiftMap: {} };
+  // 配置管理画面は ADMIN/MANAGER のみ
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   const from = new Date(year, month - 1, 1);
   const to   = new Date(year, month,     1);
@@ -96,6 +100,10 @@ export async function getAssignmentPageData(year: number, month: number): Promis
 export async function getAssignmentsForMonth(year: number, month: number) {
   const session = await requireSession();
   if (session.isDemo) return [];
+  // 組織全体の配置一覧は ADMIN/MANAGER のみ
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   const from = new Date(year, month - 1, 1);
   const to   = new Date(year, month,     1);
@@ -126,6 +134,23 @@ export async function upsertAssignment(input: {
 }) {
   const session = await requireSession();
   if (session.isDemo) return { id: "demo" };
+  // 配置管理は MANAGER/ADMIN のみ
+  if (session.role !== "MANAGER" && session.role !== "ADMIN") {
+    throw new Error("Forbidden");
+  }
+
+  // projectId / userId が共に自組織に属することを確認（IDOR 対策）
+  const [project, targetUser] = await Promise.all([
+    prisma.project.findFirst({
+      where: { id: input.projectId, orgId: session.orgId },
+      select: { id: true },
+    }),
+    prisma.user.findFirst({
+      where: { id: input.userId, orgId: session.orgId },
+      select: { id: true },
+    }),
+  ]);
+  if (!project || !targetUser) throw new Error("Forbidden");
 
   const workDate = new Date(input.workDate);
 
@@ -154,6 +179,9 @@ export async function upsertAssignment(input: {
 export async function confirmAssignments(assignmentIds: string[]) {
   const session = await requireSession();
   if (session.isDemo) return;
+  if (session.role !== "MANAGER" && session.role !== "ADMIN") {
+    throw new Error("Forbidden");
+  }
 
   await prisma.assignment.updateMany({
     where: { id: { in: assignmentIds }, project: { orgId: session.orgId } },
@@ -167,6 +195,9 @@ export async function confirmAssignments(assignmentIds: string[]) {
 export async function cancelAssignment(id: string) {
   const session = await requireSession();
   if (session.isDemo) return;
+  if (session.role !== "MANAGER" && session.role !== "ADMIN") {
+    throw new Error("Forbidden");
+  }
 
   await prisma.assignment.update({
     where: { id, project: { orgId: session.orgId } },

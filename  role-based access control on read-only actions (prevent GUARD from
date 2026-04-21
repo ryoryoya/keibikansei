@@ -1,0 +1,25 @@
+warning: in the working copy of 'src/app/actions/assignments.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/actions/attendance.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/actions/clients.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/actions/guards.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/actions/invoices.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/actions/payroll.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/actions/projects.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/actions/shifts.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/actions/sites.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/api/demo-login/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/auth.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/middleware.ts', LF will be replaced by CRLF the next time Git touches it
+ src/app/actions/assignments.ts  |  31 [32m+++++++[m
+ src/app/actions/attendance.ts   |   8 [32m++[m
+ src/app/actions/clients.ts      |  10 [32m+++[m
+ src/app/actions/guards.ts       |   5 [32m++[m
+ src/app/actions/invoices.ts     | 184 [32m+++++++++++++++++++++++++++[m[31m-------------[m
+ src/app/actions/payroll.ts      |   8 [32m++[m
+ src/app/actions/projects.ts     |  19 [32m+++++[m
+ src/app/actions/shifts.ts       |   4 [32m+[m
+ src/app/actions/sites.ts        |  17 [32m++++[m
+ src/app/api/demo-login/route.ts |  13 [32m++[m[31m-[m
+ src/lib/auth.ts                 |  15 [32m++[m[31m--[m
+ src/middleware.ts               |  15 [32m++[m[31m--[m
+ 12 files changed, 261 insertions(+), 68 deletions(-)

@@ -11,6 +11,10 @@ const isUUID = (id?: string) =>
 export async function getSites(clientId?: string) {
   const session = await requireSession();
   if (session.isDemo) return [];
+  // 現場一覧は ADMIN/MANAGER のみ
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   return prisma.site.findMany({
     where:   { orgId: session.orgId, ...(clientId ? { clientId } : {}) },
@@ -34,6 +38,16 @@ export type SiteInput = {
 export async function upsertSite(input: SiteInput) {
   const session = await requireSession();
   if (session.isDemo) return { id: "demo" };
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
+
+  // 親 client が自組織に属することを確認
+  const client = await prisma.client.findFirst({
+    where: { id: input.clientId, orgId: session.orgId },
+    select: { id: true },
+  });
+  if (!client) throw new Error("Forbidden");
 
   const data = {
     clientId:  input.clientId,
@@ -57,6 +71,9 @@ export async function upsertSite(input: SiteInput) {
 export async function deleteSite(id: string) {
   const session = await requireSession();
   if (session.isDemo) return;
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   await prisma.site.update({
     where: { id, orgId: session.orgId },

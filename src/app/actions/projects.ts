@@ -9,6 +9,11 @@ type ProjectStatus = "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED";
 export async function getProjects(status?: ProjectStatus) {
   const session = await requireSession();
   if (session.isDemo) return [];
+  // 案件一覧（単価・日給含む）は ADMIN/MANAGER のみ。
+  // GUARD が見るべき案件情報は getMyTodayAssignment 等の自分用API で取得する
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   return prisma.project.findMany({
     where:   { orgId: session.orgId, ...(status ? { status } : {}) },
@@ -21,6 +26,10 @@ export async function getProjects(status?: ProjectStatus) {
 export async function getTodayProjects() {
   const session = await requireSession();
   if (session.isDemo) return [];
+  // 当日管理画面は ADMIN/MANAGER のみ
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -76,6 +85,16 @@ const isUUID = (id?: string) =>
 export async function upsertProject(input: ProjectInput) {
   const session = await requireSession();
   if (session.isDemo) return { id: "demo" };
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
+
+  // 親 site が自組織に属することを確認
+  const site = await prisma.site.findFirst({
+    where: { id: input.siteId, orgId: session.orgId },
+    select: { id: true },
+  });
+  if (!site) throw new Error("Forbidden");
 
   const data = {
     siteId:        input.siteId,

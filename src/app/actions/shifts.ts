@@ -11,6 +11,10 @@ type Availability = "DAY_OK" | "NIGHT_OK" | "BOTH_OK" | "NG" | "UNDECIDED";
 export async function getShiftsForMonth(year: number, month: number): Promise<GuardShift[]> {
   const session = await requireSession();
   if (session.isDemo) return [];
+  // 全隊員のシフトを返すため ADMIN/MANAGER のみ
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   const from = new Date(year, month - 1, 1);
   const to   = new Date(year, month,     1);
@@ -63,6 +67,13 @@ export async function managerSetShift(input: {
   const session = await requireSession();
   if (session.isDemo) return;
   if (session.role !== "MANAGER" && session.role !== "ADMIN") throw new Error("Forbidden");
+
+  // 対象隊員が自組織に属することを確認（IDOR 対策）
+  const targetGuard = await prisma.user.findFirst({
+    where: { id: input.guardId, orgId: session.orgId },
+    select: { id: true },
+  });
+  if (!targetGuard) throw new Error("Forbidden");
 
   if (input.availability === null) {
     // null の場合はレコードを削除

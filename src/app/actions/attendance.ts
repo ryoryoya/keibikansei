@@ -16,6 +16,10 @@ function toHHMM(d: Date | null | undefined): string | null {
 export async function getDailyViewData(): Promise<DailyProject[]> {
   const session = await requireSession();
   if (session.isDemo) return [];
+  // 全隊員の打刻・GPS情報が含まれるため ADMIN/MANAGER のみ
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -115,6 +119,10 @@ export async function getMyTodayAssignment() {
 export async function getTodayAttendance() {
   const session = await requireSession();
   if (session.isDemo) return [];
+  // 組織全体の勤怠データを返すため ADMIN/MANAGER のみ
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);

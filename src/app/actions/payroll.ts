@@ -114,6 +114,10 @@ function aggregateItems(
 export async function getPayrollRunForView(year: number, month: number): Promise<PayrollRun | null> {
   const session = await requireSession();
   if (session.isDemo) return null;
+  // 給与明細は経理・管理者のみ閲覧可能（GUARD に他人の給与を見せない）
+  if (session.role !== "ADMIN" && session.role !== "ACCOUNTANT") {
+    throw new Error("Forbidden");
+  }
 
   const run = await prisma.payrollRun.findFirst({
     where: { orgId: session.orgId, year, month },
@@ -258,6 +262,10 @@ export async function updatePayrollStatus(runId: string, status: PayrollStatus) 
 export async function getPayrollRunId(year: number, month: number): Promise<string | null> {
   const session = await requireSession();
   if (session.isDemo) return null;
+  // 経理・管理者のみ
+  if (session.role !== "ADMIN" && session.role !== "ACCOUNTANT") {
+    throw new Error("Forbidden");
+  }
 
   const run = await prisma.payrollRun.findFirst({
     where: { orgId: session.orgId, year, month },

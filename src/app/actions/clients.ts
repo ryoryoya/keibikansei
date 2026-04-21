@@ -12,6 +12,10 @@ const isUUID = (id?: string) =>
 export async function getClients() {
   const session = await requireSession();
   if (session.isDemo) return [];
+  // 得意先一覧は ADMIN/MANAGER のみ（GUARD には隠す）
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   return prisma.client.findMany({
     where:   { orgId: session.orgId },
@@ -36,6 +40,9 @@ export type ClientInput = {
 export async function upsertClient(input: ClientInput) {
   const session = await requireSession();
   if (session.isDemo) return { id: "demo" };
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   const data = {
     name:           input.name,
@@ -61,6 +68,9 @@ export async function upsertClient(input: ClientInput) {
 export async function deleteClient(id: string) {
   const session = await requireSession();
   if (session.isDemo) return;
+  if (session.role !== "ADMIN" && session.role !== "MANAGER") {
+    throw new Error("Forbidden");
+  }
 
   await prisma.client.update({
     where: { id, orgId: session.orgId },
