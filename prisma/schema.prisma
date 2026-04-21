@@ -1,0 +1,592 @@
+// ============================================================
+// 警備管制システム - Prisma Schema
+// DB: PostgreSQL (Supabase)
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // Supabase connection pooling対応
+}
+
+// ============================================================
+// マルチテナント: 警備会社
+// ============================================================
+model Organization {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String   @db.VarChar(200)
+  address       String?  @db.VarChar(500)
+  tel           String?  @db.VarChar(20)
+  licenseNumber String?  @map("license_number") @db.VarChar(50) // 警備業認定番号
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  users         User[]
+  clients       Client[]
+  sites         Site[]
+  projects      Project[]
+  payrollRuns   PayrollRun[]
+  invoices      Invoice[]
+  chatChannels  ChatChannel[]
+  guardLedgers  GuardLedger[]
+
+  @@map("organizations")
+}
+
+// ============================================================
+// ユーザー (管制担当 / 経理 / 隊員 / 管理者)
+// ============================================================
+enum UserRole {
+  ADMIN     // システム管理者
+  MANAGER   // 管制担当
+  ACCOUNTANT // 経理担当
+  GUARD     // 隊員
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  email     String   @unique @db.VarChar(254)
+  name      String   @db.VarChar(100)
+  nameKana  String?  @map("name_kana") @db.VarChar(100) // フリガナ
+  phone     String?  @db.VarChar(20)
+  role      UserRole @default(GUARD)
+  isActive  Boolean  @default(true) @map("is_active")
+  avatarUrl String?  @map("avatar_url") @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  org              Organization      @relation(fields: [orgId], references: [id])
+  guardProfile     GuardProfile?
+  shiftSubmissions ShiftSubmission[]
+  assignments      Assignment[]
+  attendances      Attendance[]
+  guardReports     GuardReport[]
+  payrollItems     PayrollItem[]
+  paidLeaves       PaidLeave[]
+  sentMessages     ChatMessage[]     @relation("sender")
+  receivedMessages ChatMessage[]     @relation("recipient")
+  trainingRecords  TrainingRecord[]
+
+  @@index([orgId])
+  @@index([orgId, role])
+  @@index([email])
+  @@map("users")
+}
+
+// ============================================================
+// 隊員プロフィール (隊員固有の詳細情報)
+// ============================================================
+enum PayType {
+  DAILY   // 日給
+  MONTHLY // 月給
+  HOURLY  // 時給
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+model GuardProfile {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  birthDate       DateTime? @map("birth_date") @db.Date
+  gender          Gender?
+  hireDate        DateTime? @map("hire_date") @db.Date
+  experienceYears Int?     @default(0) @map("experience_years")
+  qualifications  Json?    @default("[]") // 資格一覧 ["交通誘導2級", "施設警備2級"]
+  skills          Json?    @default("[]") // スキルタグ
+  payType         PayType  @default(DAILY) @map("pay_type")
+  basePay         Int      @default(0) @map("base_pay") // 基本給（円）
+  bankName        String?  @map("bank_name") @db.VarChar(100)
+  bankBranch      String?  @map("bank_branch") @db.VarChar(100)
+  bankAccountType String?  @map("bank_account_type") @db.VarChar(10) // 普通/当座
+  bankAccountNum  String?  @map("bank_account_num") @db.VarChar(20)
+  bankAccountName String?  @map("bank_account_name") @db.VarChar(100) // 口座名義
+  hasSmartphone   Boolean  @default(true) @map("has_smartphone")
+  photoUrl        String?  @map("photo_url") @db.VarChar(500) // 顔写真URL（配置画面で表示）
+  emergencyContact String? @map("emergency_contact") @db.VarChar(200)
+  address         String?  @db.VarChar(500)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("guard_profiles")
+}
+
+// ============================================================
+// 得意先 (クライアント)
+// ============================================================
+enum TaxType {
+  INCLUSIVE  // 内税
+  EXCLUSIVE // 外税
+}
+
+model Client {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  name            String   @db.VarChar(200)
+  contactPerson   String?  @map("contact_person") @db.VarChar(100)
+  tel             String?  @db.VarChar(20)
+  email           String?  @db.VarChar(254)
+  address         String?  @db.VarChar(500)
+  billingCycleDay Int      @default(31) @map("billing_cycle_day") // 締め日（1-31）
+  paymentTermDays Int      @default(30) @map("payment_term_days") // 支払サイト（日）
+  taxType         TaxType  @default(EXCLUSIVE) @map("tax_type")
+  notes           String?  @db.Text
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  org      Organization @relation(fields: [orgId], references: [id])
+  sites    Site[]
+  invoices Invoice[]
+
+  @@index([orgId])
+  @@map("clients")
+}
+
+// ============================================================
+// 現場 (配置先)
+// ============================================================
+enum GuardType {
+  TYPE_1 // 1号警備（施設警備）
+  TYPE_2 // 2号警備（交通誘導）
+  TYPE_3 // 3号警備（輸送警備）
+  TYPE_4 // 4号警備（身辺警備）
+}
+
+model Site {
+  id        String    @id @default(uuid()) @db.Uuid
+  orgId     String    @map("org_id") @db.Uuid
+  clientId  String    @map("client_id") @db.Uuid
+  name      String    @db.VarChar(200)
+  address   String?   @db.VarChar(500)
+  latitude  Float?
+  longitude Float?
+  guardType GuardType @default(TYPE_2) @map("guard_type")
+  notes     String?   @db.Text
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  org      Organization @relation(fields: [orgId], references: [id])
+  client   Client       @relation(fields: [clientId], references: [id])
+  projects Project[]
+
+  @@index([orgId])
+  @@index([clientId])
+  @@map("sites")
+}
+
+// ============================================================
+// 案件 (プロジェクト)
+// ============================================================
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum WorkStyle {
+  DAY_SHIFT      // 日勤
+  NIGHT_SHIFT    // 夜勤
+  RESIDENT       // 常駐
+  DAY_NIGHT      // 日夜勤
+  EVENT          // イベント
+  OTHER          // その他
+}
+
+model Project {
+  id             String        @id @default(uuid()) @db.Uuid
+  orgId          String        @map("org_id") @db.Uuid
+  siteId         String        @map("site_id") @db.Uuid
+  name           String        @db.VarChar(300)
+  workStyle      WorkStyle     @default(DAY_SHIFT) @map("work_style") // 勤務形態
+  startDate      DateTime      @map("start_date") @db.Date
+  endDate        DateTime?     @map("end_date") @db.Date
+  requiredGuards Int           @default(1) @map("required_guards")
+  startTime      String        @map("start_time") @db.VarChar(5) // "08:00" 形式
+  endTime        String        @map("end_time") @db.VarChar(5)
+  unitPrice      Int           @default(0) @map("unit_price") // 請求単価（1人1日あたり）
+  guardPay       Int           @default(0) @map("guard_pay") // 隊員支払単価
+  overtimeRate   Float         @default(1.25) @map("overtime_rate") // 残業割増率
+  nightRate      Float         @default(1.25) @map("night_rate") // 深夜割増率
+  holidayRate    Float         @default(1.35) @map("holiday_rate") // 休日割増率
+  status         ProjectStatus @default(DRAFT)
+  notes          String?       @db.Text
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  org         Organization @relation(fields: [orgId], references: [id])
+  site        Site         @relation(fields: [siteId], references: [id])
+  assignments Assignment[]
+  invoices    Invoice[]
+  chatChannel ChatChannel?
+
+  @@index([orgId])
+  @@index([siteId])
+  @@index([orgId, status])
+  @@map("projects")
+}
+
+// ============================================================
+// シフト提出 (隊員の希望勤務)
+// ============================================================
+enum Availability {
+  DAY_OK    // 日勤OK
+  NIGHT_OK  // 夜勤OK
+  BOTH_OK   // どちらもOK
+  NG        // 勤務不可
+  UNDECIDED // 未定
+}
+
+model ShiftSubmission {
+  id         String       @id @default(uuid()) @db.Uuid
+  userId     String       @map("user_id") @db.Uuid
+  targetDate DateTime     @map("target_date") @db.Date
+  availability Availability @default(UNDECIDED)
+  memo       String?      @db.VarChar(500)
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetDate])
+  @@index([userId])
+  @@index([targetDate])
+  @@map("shift_submissions")
+}
+
+// ============================================================
+// 配置 (案件×隊員×日付)
+// ============================================================
+enum AssignmentStatus {
+  PENDING    // 配置予定
+  CONFIRMED  // 確定
+  CANCELLED  // キャンセル
+}
+
+model Assignment {
+  id               String           @id @default(uuid()) @db.Uuid
+  projectId        String           @map("project_id") @db.Uuid
+  userId           String           @map("user_id") @db.Uuid
+  workDate         DateTime         @map("work_date") @db.Date
+  plannedStart     String           @map("planned_start") @db.VarChar(5)
+  plannedEnd       String           @map("planned_end") @db.VarChar(5)
+  status           AssignmentStatus @default(PENDING)
+  prevDayConfirmed Boolean          @default(false) @map("prev_day_confirmed") // 前日確認済み
+  notifiedAt       DateTime?        @map("notified_at") // 通知送信日時
+  confirmedAt      DateTime?        @map("confirmed_at") // 隊員からの確認日時
+  notes            String?          @db.VarChar(500)
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  project      Project       @relation(fields: [projectId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+  attendances  Attendance[]
+  guardReports GuardReport[]
+
+  @@unique([projectId, userId, workDate])
+  @@index([projectId])
+  @@index([userId])
+  @@index([workDate])
+  @@index([userId, workDate])
+  @@map("assignments")
+}
+
+// ============================================================
+// 勤怠 (上番・下番打刻)
+// ============================================================
+enum AttendanceStatus {
+  PENDING  // 未確認
+  APPROVED // 承認済み
+  REJECTED // 差し戻し
+}
+
+model Attendance {
+  id              String           @id @default(uuid()) @db.Uuid
+  assignmentId    String           @map("assignment_id") @db.Uuid
+  userId          String           @map("user_id") @db.Uuid
+  // 段階打刻（起床→出発→上番→下番）
+  wakeUpAt        DateTime?        @map("wake_up_at") // 起床確認
+  departureAt     DateTime?        @map("departure_at") // 出発確認
+  clockIn         DateTime?        @map("clock_in") // 上番
+  clockOut        DateTime?        @map("clock_out") // 下番
+  clockInLat      Float?           @map("clock_in_lat")
+  clockInLng      Float?           @map("clock_in_lng")
+  clockOutLat     Float?           @map("clock_out_lat")
+  clockOutLng     Float?           @map("clock_out_lng")
+  breakMinutes    Int              @default(0) @map("break_minutes") // 休憩時間（分）
+  overtimeMinutes Int              @default(0) @map("overtime_minutes") // 残業時間（分）
+  nightMinutes    Int              @default(0) @map("night_minutes") // 深夜時間（分）
+  holidayFlag     Boolean          @default(false) @map("holiday_flag") // 休日勤務フラグ
+  notes           String?          @db.Text
+  status          AttendanceStatus @default(PENDING)
+  approvedAt      DateTime?        @map("approved_at")
+  approvedBy      String?          @map("approved_by") @db.Uuid
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  assignment   Assignment    @relation(fields: [assignmentId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+  payrollItems PayrollItem[]
+
+  @@unique([assignmentId]) // 1配置に対して1勤怠レコード
+  @@index([userId])
+  @@index([userId, clockIn])
+  @@map("attendances")
+}
+
+// ============================================================
+// 警備報告書（電子サイン対応）
+// ============================================================
+model GuardReport {
+  id              String   @id @default(uuid()) @db.Uuid
+  assignmentId    String   @map("assignment_id") @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  photoUrls       Json     @default("[]") @map("photo_urls") // 現場写真（複数）
+  remarks         String?  @db.Text // 備考・特記事項
+  // 電子署名
+  signatureUrl    String?  @map("signature_url") @db.VarChar(500) // Canvas署名画像URL
+  signedAt        DateTime? @map("signed_at") // 署名日時
+  signedByName    String?  @map("signed_by_name") @db.VarChar(100) // 署名者名
+  // 報告書PDF
+  reportPdfUrl    String?  @map("report_pdf_url") @db.VarChar(500) // 自動生成PDF
+  // 現場担当者承認
+  clientApproved  Boolean  @default(false) @map("client_approved")
+  clientSignUrl   String?  @map("client_sign_url") @db.VarChar(500) // 現場担当者署名
+  clientSignedAt  DateTime? @map("client_signed_at")
+  // メタ
+  submittedAt     DateTime @default(now()) @map("submitted_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id])
+  user       User       @relation(fields: [userId], references: [id])
+
+  @@index([assignmentId])
+  @@index([userId])
+  @@map("guard_reports")
+}
+
+// ============================================================
+// 給与計算
+// ============================================================
+enum PayrollStatus {
+  DRAFT     // 計算中
+  CONFIRMED // 確定
+  PAID      // 支払済み
+}
+
+model PayrollRun {
+  id          String        @id @default(uuid()) @db.Uuid
+  orgId       String        @map("org_id") @db.Uuid
+  year        Int
+  month       Int
+  status      PayrollStatus @default(DRAFT)
+  confirmedAt DateTime?     @map("confirmed_at")
+  paidAt      DateTime?     @map("paid_at")
+  fbDataUrl   String?       @map("fb_data_url") @db.VarChar(500) // FBデータダウンロードURL
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  org   Organization  @relation(fields: [orgId], references: [id])
+  items PayrollItem[]
+
+  @@unique([orgId, year, month])
+  @@map("payroll_runs")
+}
+
+model PayrollItem {
+  id             String   @id @default(uuid()) @db.Uuid
+  payrollRunId   String   @map("payroll_run_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  attendanceId   String?  @map("attendance_id") @db.Uuid
+  workDate       DateTime? @map("work_date") @db.Date
+  baseAmount     Int      @default(0) @map("base_amount") // 基本給
+  overtimeAmount Int      @default(0) @map("overtime_amount") // 残業手当
+  nightAmount    Int      @default(0) @map("night_amount") // 深夜手当
+  holidayAmount  Int      @default(0) @map("holiday_amount") // 休日手当
+  allowances     Int      @default(0) // その他手当
+  deductions     Int      @default(0) // 控除
+  taxWithheld    Int      @default(0) @map("tax_withheld") // 源泉徴収額
+  socialInsurance Int     @default(0) @map("social_insurance") // 社会保険料
+  netPay         Int      @default(0) @map("net_pay") // 差引支給額
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  payrollRun PayrollRun  @relation(fields: [payrollRunId], references: [id])
+  user       User        @relation(fields: [userId], references: [id])
+  attendance Attendance? @relation(fields: [attendanceId], references: [id])
+
+  @@index([payrollRunId])
+  @@index([userId])
+  @@map("payroll_items")
+}
+
+// ============================================================
+// 請求書
+// ============================================================
+enum InvoiceStatus {
+  DRAFT  // 下書き
+  ISSUED // 発行済み
+  PAID   // 入金済み
+}
+
+model Invoice {
+  id        String        @id @default(uuid()) @db.Uuid
+  orgId     String        @map("org_id") @db.Uuid
+  clientId  String        @map("client_id") @db.Uuid
+  projectId String?       @map("project_id") @db.Uuid
+  year      Int
+  month     Int
+  subtotal  Int           @default(0) // 小計
+  taxRate   Float         @default(0.10) @map("tax_rate") // 消費税率
+  taxAmount Int           @default(0) @map("tax_amount") // 消費税額
+  total     Int           @default(0) // 合計
+  status    InvoiceStatus @default(DRAFT)
+  pdfUrl    String?       @map("pdf_url") @db.VarChar(500)
+  dueDate   DateTime?     @map("due_date") @db.Date
+  issuedAt  DateTime?     @map("issued_at")
+  paidAt    DateTime?     @map("paid_at")
+  notes     String?       @db.Text
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  org     Organization @relation(fields: [orgId], references: [id])
+  client  Client       @relation(fields: [clientId], references: [id])
+  project Project?     @relation(fields: [projectId], references: [id])
+
+  @@index([orgId])
+  @@index([clientId])
+  @@index([orgId, year, month])
+  @@map("invoices")
+}
+
+// ============================================================
+// 有給休暇管理
+// ============================================================
+model PaidLeave {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  grantedDate   DateTime @map("granted_date") @db.Date
+  grantedDays   Float    @map("granted_days") // 比例付与対応（0.5日単位）
+  usedDays      Float    @default(0) @map("used_days")
+  remainingDays Float    @map("remaining_days")
+  expiryDate    DateTime @map("expiry_date") @db.Date // 有効期限（2年）
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, expiryDate])
+  @@map("paid_leaves")
+}
+
+// ============================================================
+// チャット
+// ============================================================
+enum ChannelType {
+  DIRECT    // 1:1
+  PROJECT   // 現場別グループ
+  BROADCAST // 全体通知
+}
+
+model ChatChannel {
+  id        String      @id @default(uuid()) @db.Uuid
+  orgId     String      @map("org_id") @db.Uuid
+  name      String?     @db.VarChar(200)
+  type      ChannelType @default(DIRECT)
+  projectId String?     @unique @map("project_id") @db.Uuid
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  org      Organization  @relation(fields: [orgId], references: [id])
+  project  Project?      @relation(fields: [projectId], references: [id])
+  messages ChatMessage[]
+
+  @@index([orgId])
+  @@map("chat_channels")
+}
+
+model ChatMessage {
+  id            String   @id @default(uuid()) @db.Uuid
+  channelId     String   @map("channel_id") @db.Uuid
+  senderId      String   @map("sender_id") @db.Uuid
+  recipientId   String?  @map("recipient_id") @db.Uuid // DM時のみ
+  body          String   @db.Text
+  attachmentUrl String?  @map("attachment_url") @db.VarChar(500)
+  isRead        Boolean  @default(false) @map("is_read")
+  sentAt        DateTime @default(now()) @map("sent_at")
+
+  channel   ChatChannel @relation(fields: [channelId], references: [id])
+  sender    User        @relation("sender", fields: [senderId], references: [id])
+  recipient User?       @relation("recipient", fields: [recipientId], references: [id])
+
+  @@index([channelId, sentAt])
+  @@index([recipientId, isRead])
+  @@map("chat_messages")
+}
+
+// ============================================================
+// 教育記録 (教育実施簿の元データ)
+// ============================================================
+model TrainingRecord {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  trainingDate DateTime @map("training_date") @db.Date
+  trainingType String   @map("training_type") @db.VarChar(100) // 新任教育/現任教育 等
+  hours        Float    // 教育時間
+  instructor   String?  @db.VarChar(100) // 指導教育責任者名
+  content      String?  @db.Text // 教育内容
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([orgId])
+  @@index([userId])
+  @@map("training_records")
+}
+
+// ============================================================
+// 警備業帳票 (立入検査対応の各種帳票)
+// ============================================================
+enum LedgerType {
+  GUARD_ROSTER        // 隊員名簿
+  PLACEMENT_TABLE     // 配置表
+  EDUCATION_LOG       // 教育実施簿
+  WAGE_LEDGER         // 賃金台帳
+  ATTENDANCE_BOOK     // 出勤簿
+  WORKER_ROSTER       // 労働者名簿
+  IMPORTANT_MATTERS   // 重要事項説明書
+  EMPLOYMENT_CONTRACT // 雇用契約書
+  CONFIRMATION_SHEET  // 確認票
+  GUARD_REPORT_BOOK   // 警備報告書
+}
+
+model GuardLedger {
+  id          String     @id @default(uuid()) @db.Uuid
+  orgId       String     @map("org_id") @db.Uuid
+  userId      String?    @map("user_id") @db.Uuid // 個人帳票の場合
+  ledgerType  LedgerType @map("ledger_type")
+  year        Int
+  month       Int?       // 月次帳票の場合
+  data        Json       @default("{}") // 帳票データ（柔軟対応）
+  pdfUrl      String?    @map("pdf_url") @db.VarChar(500)
+  generatedAt DateTime   @default(now()) @map("generated_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  org Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, ledgerType])
+  @@index([orgId, year, month])
+  @@map("guard_ledgers")
+}

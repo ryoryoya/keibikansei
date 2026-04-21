@@ -1,0 +1,293 @@
+"use server";
+
+import prisma from "@/lib/prisma";
+import { startOfMonth, endOfMonth, eachDayOfInterval, format } from "date-fns";
+import type { CalendarDay } from "@/types";
+
+// ============================================================
+// 案件取得
+// ============================================================
+export async function getProjects(orgId: string, status?: string) {
+  return prisma.project.findMany({
+    where: {
+      orgId,
+      ...(status ? { status: status as any } : {}),
+    },
+    include: {
+      site: { include: { client: true } },
+      assignments: { include: { user: true } },
+    },
+    orderBy: { startDate: "asc" },
+  });
+}
+
+export async function getProjectById(projectId: string) {
+  return prisma.project.findUnique({
+    where: { id: projectId },
+    include: {
+      site: { include: { client: true } },
+      assignments: {
+        include: {
+          user: { include: { guardProfile: true } },
+          attendances: true,
+        },
+        orderBy: { workDate: "asc" },
+      },
+    },
+  });
+}
+
+// ============================================================
+// カレンダーデータ取得（月単位）
+// ============================================================
+export async function getCalendarData(
+  orgId: string,
+  year: number,
+  month: number
+): Promise<CalendarDay[]> {
+  const monthStart = startOfMonth(new Date(year, month - 1));
+  const monthEnd = endOfMonth(new Date(year, month - 1));
+
+  // 月内のアクティブ案件を取得
+  const projects = await prisma.project.findMany({
+    where: {
+      orgId,
+      status: "ACTIVE",
+      startDate: { lte: monthEnd },
+      OR: [{ endDate: null }, { endDate: { gte: monthStart } }],
+    },
+    include: {
+      site: { include: { client: true } },
+    },
+  });
+
+  // 月内の配置を取得
+  const assignments = await prisma.assignment.findMany({
+    where: {
+      project: { orgId },
+      workDate: { gte: monthStart, lte: monthEnd },
+      status: { not: "CANCELLED" },
+    },
+    select: {
+      projectId: true,
+      workDate: true,
+    },
+  });
+
+  // 日別に配置数を集計
+  const assignmentCounts = new Map<string, Map<string, number>>();
+  for (const a of assignments) {
+    const dateKey = format(a.workDate, "yyyy-MM-dd");
+    if (!assignmentCounts.has(dateKey)) {
+      assignmentCounts.set(dateKey, new Map());
+    }
+    const dayMap = assignmentCounts.get(dateKey)!;
+    dayMap.set(a.projectId, (dayMap.get(a.projectId) || 0) + 1);
+  }
+
+  // カレンダーデータを構築
+  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+
+  return days.map((day) => {
+    const dateKey = format(day, "yyyy-MM-dd");
+    const dayAssignments = assignmentCounts.get(dateKey) || new Map();
+
+    const dayProjects = projects
+      .filter((p) => {
+        const start = new Date(p.startDate);
+        const end = p.endDate ? new Date(p.endDate) : monthEnd;
+        return day >= start && day <= end;
+      })
+      .map((p) => {
+        const assignedGuards = dayAssignments.get(p.id) || 0;
+        return {
+          id: p.id,
+          name: p.name,
+          siteName: p.site.name,
+          clientName: p.site.client.name,
+          requiredGuards: p.requiredGuards,
+          assignedGuards,
+          startTime: p.startTime,
+          endTime: p.endTime,
+          status:
+            assignedGuards >= p.requiredGuards
+              ? ("sufficient" as const)
+              : assignedGuards > 0
+              ? ("shortage" as const)
+              : ("empty" as const),
+        };
+      });
+
+    return { date: dateKey, projects: dayProjects };
+  });
+}
+
+// ============================================================
+// 配置管理
+// ============================================================
+
+// 特定日の配置可能な隊員を取得
+export async function getAvailableGuards(
+  orgId: string,
+  date: string,
+  projectId?: string
+) {
+  const targetDate = new Date(date);
+
+  // 全隊員を取得
+  const allGuards = await prisma.user.findMany({
+    where: { orgId, role: "GUARD", isActive: true },
+    include: { guardProfile: true },
+  });
+
+  // その日の既存配置を取得
+  const existingAssignments = await prisma.assignment.findMany({
+    where: {
+      workDate: targetDate,
+      status: { not: "CANCELLED" },
+      project: { orgId },
+    },
+    select: { userId: true, projectId: true },
+  });
+
+  // シフト提出を取得
+  const shifts = await prisma.shiftSubmission.findMany({
+    where: {
+      targetDate,
+      userId: { in: allGuards.map((g) => g.id) },
+    },
+  });
+
+  const shiftMap = new Map(shifts.map((s) => [s.userId, s]));
+  const assignedSet = new Set(existingAssignments.map((a) => a.userId));
+
+  return allGuards.map((guard) => {
+    const shift = shiftMap.get(guard.id);
+    const isAssigned = assignedSet.has(guard.id);
+    const assignedToThisProject = existingAssignments.some(
+      (a) => a.userId === guard.id && a.projectId === projectId
+    );
+
+    return {
+      ...guard,
+      shiftStatus: shift?.availability || "UNDECIDED",
+      isAssigned,
+      assignedToThisProject,
+      isAvailable:
+        !isAssigned &&
+        shift?.availability !== "NG" &&
+        shift?.availability !== undefined,
+    };
+  });
+}
+
+// 隊員を案件に配置
+export async function assignGuard(params: {
+  projectId: string;
+  userId: string;
+  workDate: string;
+  plannedStart: string;
+  plannedEnd: string;
+}) {
+  const { projectId, userId, workDate, plannedStart, plannedEnd } = params;
+
+  // 重複チェック
+  const existing = await prisma.assignment.findUnique({
+    where: {
+      projectId_userId_workDate: {
+        projectId,
+        userId,
+        workDate: new Date(workDate),
+      },
+    },
+  });
+
+  if (existing && existing.status !== "CANCELLED") {
+    throw new Error("この隊員は既にこの案件に配置されています");
+  }
+
+  if (existing) {
+    // キャンセル済みの場合は復活
+    return prisma.assignment.update({
+      where: { id: existing.id },
+      data: { status: "PENDING", plannedStart, plannedEnd },
+    });
+  }
+
+  return prisma.assignment.create({
+    data: {
+      projectId,
+      userId,
+      workDate: new Date(workDate),
+      plannedStart,
+      plannedEnd,
+      status: "PENDING",
+    },
+  });
+}
+
+// 配置を一括作成（複数日）
+export async function assignGuardBulk(params: {
+  projectId: string;
+  userId: string;
+  dates: string[];
+  plannedStart: string;
+  plannedEnd: string;
+}) {
+  const { projectId, userId, dates, plannedStart, plannedEnd } = params;
+
+  const results = [];
+  for (const date of dates) {
+    try {
+      const result = await assignGuard({
+        projectId,
+        userId,
+        workDate: date,
+        plannedStart,
+        plannedEnd,
+      });
+      results.push({ date, success: true, data: result });
+    } catch (error: any) {
+      results.push({ date, success: false, error: error.message });
+    }
+  }
+
+  return results;
+}
+
+// 配置をキャンセル
+export async function cancelAssignment(assignmentId: string) {
+  return prisma.assignment.update({
+    where: { id: assignmentId },
+    data: { status: "CANCELLED" },
+  });
+}
+
+// 配置を確定
+export async function confirmAssignment(assignmentId: string) {
+  return prisma.assignment.update({
+    where: { id: assignmentId },
+    data: { status: "CONFIRMED", confirmedAt: new Date() },
+  });
+}
+
+// 特定日の配置一覧（当日管理画面用）
+export async function getDailyAssignments(orgId: string, date: string) {
+  return prisma.assignment.findMany({
+    where: {
+      workDate: new Date(date),
+      status: { not: "CANCELLED" },
+      project: { orgId },
+    },
+    include: {
+      user: { include: { guardProfile: true } },
+      project: { include: { site: { include: { client: true } } } },
+      attendances: true,
+      guardReports: true,
+    },
+    orderBy: [
+      { project: { name: "asc" } },
+      { plannedStart: "asc" },
+    ],
+  });
+}
