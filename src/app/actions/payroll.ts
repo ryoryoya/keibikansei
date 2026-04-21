@@ -149,6 +149,10 @@ export async function calculatePayroll(year: number, month: number): Promise<Pay
     // デモ時はデモデータを返す（インポートを避けるため空を返す）
     return { year, month, status: "DRAFT", confirmedAt: null, paidAt: null, items: [] };
   }
+  // 経理・管理者のみ給与計算実行可能
+  if (session.role !== "ADMIN" && session.role !== "ACCOUNTANT") {
+    throw new Error("Forbidden");
+  }
 
   const from = new Date(year, month - 1, 1);
   const to   = new Date(year, month,     1);
@@ -233,6 +237,10 @@ export async function calculatePayroll(year: number, month: number): Promise<Pay
 export async function updatePayrollStatus(runId: string, status: PayrollStatus) {
   const session = await requireSession();
   if (session.isDemo) return;
+  // 経理・管理者のみステータス変更可能
+  if (session.role !== "ADMIN" && session.role !== "ACCOUNTANT") {
+    throw new Error("Forbidden");
+  }
 
   await prisma.payrollRun.update({
     where: { id: runId, orgId: session.orgId },

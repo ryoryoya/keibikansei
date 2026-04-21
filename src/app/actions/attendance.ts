@@ -148,13 +148,32 @@ export async function upsertAttendance(input: {
   const session = await requireSession();
   if (session.isDemo) return { id: "demo" };
 
+  // 配置が自組織に属することを確認（IDOR対策）
+  const assignment = await prisma.assignment.findFirst({
+    where: {
+      id: input.assignmentId,
+      project: { orgId: session.orgId },
+    },
+    select: { id: true, userId: true },
+  });
+  if (!assignment) throw new Error("Forbidden");
+
+  // 他人の打刻は MANAGER/ADMIN のみ許可。一般隊員は自分の配置のみ
+  const isManager = session.role === "MANAGER" || session.role === "ADMIN";
+  if (!isManager && assignment.userId !== session.userId) {
+    throw new Error("Forbidden");
+  }
+
+  // クライアント入力の userId は信用せず、配置レコードの userId を使う
+  const targetUserId = assignment.userId;
+
   const toDate = (s?: string | null) => (s ? new Date(s) : null);
 
   const result = await prisma.attendance.upsert({
     where:  { assignmentId: input.assignmentId },
     create: {
       assignmentId: input.assignmentId,
-      userId:       input.userId,
+      userId:       targetUserId,
       wakeUpAt:     toDate(input.wakeUpAt),
       departureAt:  toDate(input.departureAt),
       clockIn:      toDate(input.clockIn),
@@ -190,6 +209,16 @@ export async function manualStamp(input: {
   const session = await requireSession();
   if (session.isDemo) return;
   if (session.role !== "MANAGER" && session.role !== "ADMIN") throw new Error("Forbidden");
+
+  // 配置が自組織に属することを確認（IDOR対策）
+  const assignment = await prisma.assignment.findFirst({
+    where: {
+      id: input.assignmentId,
+      project: { orgId: session.orgId },
+    },
+    select: { id: true },
+  });
+  if (!assignment) throw new Error("Forbidden");
 
   const toDate = (s?: string | null) => (s ? new Date(s) : undefined);
 

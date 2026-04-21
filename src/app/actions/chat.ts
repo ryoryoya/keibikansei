@@ -40,6 +40,13 @@ export async function sendMessage(channelId: string, body: string) {
   const session = await requireSession();
   if (session.isDemo) return { id: "demo" };
 
+  // チャンネルが自組織に属することを確認（IDOR対策）
+  const channel = await prisma.chatChannel.findFirst({
+    where: { id: channelId, orgId: session.orgId },
+    select: { id: true },
+  });
+  if (!channel) throw new Error("Forbidden");
+
   const msg = await prisma.chatMessage.create({
     data: {
       channelId,
