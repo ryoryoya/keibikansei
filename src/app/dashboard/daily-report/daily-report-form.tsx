@@ -127,7 +127,7 @@ export default function DailyReportForm({ initial, guards: guardsProp, onSave, o
               <button
                 key={g.id}
                 type="button"
-                onClick={() => toggleGuard(g.id, g.name)}
+                onClick={() => toggleGuard(g.id)}
                 className={`px-3 py-1 text-xs rounded-full border transition-colors ${
                   form.guardIds.includes(g.id)
                     ? "bg-brand-500 text-white border-brand-500"
