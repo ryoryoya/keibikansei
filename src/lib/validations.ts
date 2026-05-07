@@ -3,6 +3,8 @@
 // ============================================================
 
 import { z } from "zod";
+// OCR用は Anthropic SDK (zodOutputFormat) が zod/v4 を要求するため v4 を別名で import
+import { z as z4 } from "zod/v4";
 
 // --- 隊員 ---
 export const createGuardSchema = z.object({
@@ -118,6 +120,42 @@ export const createInvoiceSchema = z.object({
   dueDate: z.string().optional(),
   notes: z.string().optional(),
 });
+
+// --- 日報OCR ---
+// OCRで日報画像から抽出するフィールド（DailyReport型に対応）
+// Anthropic SDK の zodOutputFormat が zod/v4 を要求するため、z4 で構築
+export const ocrWorkLocationSchema = z4.object({
+  timeStart: z4.string().nullable(),
+  timeEnd: z4.string().nullable(),
+  location: z4.string().nullable(),
+  distance: z4.number().nullable(),
+});
+
+export const ocrDailyReportSchema = z4.object({
+  reportDate: z4.string().nullable().describe("日付 YYYY-MM-DD"),
+  clientName: z4.string().nullable().describe("得意先名。マスタのいずれかに正規化"),
+  constructionName: z4.string().nullable().describe("工事名"),
+  constructionCompany: z4.string().nullable().describe("施工会社名"),
+  teamName: z4.string().nullable().describe("班名"),
+  motoukeCd: z4.string().nullable().describe("元請CD"),
+  startTime: z4.string().nullable().describe("開始時刻 HH:MM"),
+  endTime: z4.string().nullable().describe("終了時刻 HH:MM"),
+  breakTime: z4.string().nullable().describe("休憩時間 H:MM"),
+  vehicles: z4.number().nullable().describe("車両台数"),
+  totalDistance: z4.number().nullable().describe("合計距離(km)"),
+  headcount: z4.number().nullable().describe("出動人数"),
+  guardNames: z4.array(z4.string()).describe("警備員氏名の配列。マスタのいずれかに正規化"),
+  locations: z4.array(ocrWorkLocationSchema).max(4).describe("施工場所（最大4箇所）"),
+  areaSpan: z4.number().nullable(),
+  stayLocation: z4.string().nullable(),
+  stayCount: z4.number().nullable(),
+  stayPersons: z4.string().nullable(),
+  remarks: z4.string().nullable().describe("備考・特記事項"),
+  confidence: z4.enum(["high", "medium", "low"]).describe("読み取り全体の信頼度"),
+  unreadableFields: z4.array(z4.string()).describe("読み取れなかった項目の日本語ラベル"),
+});
+
+export type OcrDailyReportResult = z4.infer<typeof ocrDailyReportSchema>;
 
 // 型エクスポート
 export type CreateGuardInput = z.infer<typeof createGuardSchema>;

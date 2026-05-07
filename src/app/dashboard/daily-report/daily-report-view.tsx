@@ -5,6 +5,7 @@ import type { DailyReport, GuardOption } from "./daily-report-types";
 import { DEMO_REPORTS, DEMO_GUARDS_FOR_REPORT, newReport } from "./daily-report-types";
 import DailyReportForm from "./daily-report-form";
 import DailyReportPrint from "./daily-report-print";
+import OcrUpload from "./ocr-upload";
 
 export default function DailyReportView({ dbGuards = [] }: { dbGuards?: GuardOption[] }) {
   const guards: GuardOption[] = dbGuards.length > 0 ? dbGuards : DEMO_GUARDS_FOR_REPORT;
@@ -12,6 +13,7 @@ export default function DailyReportView({ dbGuards = [] }: { dbGuards?: GuardOpt
   const [mode, setMode] = useState<"list" | "new" | "edit">("list");
   const [editing, setEditing] = useState<DailyReport | null>(null);
   const [printing, setPrinting] = useState<DailyReport | null>(null);
+  const [ocrOpen, setOcrOpen] = useState(false);
 
   const handleSave = (r: DailyReport) => {
     setReports((prev) =>
@@ -72,12 +74,20 @@ export default function DailyReportView({ dbGuards = [] }: { dbGuards?: GuardOpt
           <h2 className="text-2xl font-bold text-gray-900">警備報告書（日報）</h2>
           <p className="text-sm text-gray-500 mt-1">全{reports.length}件</p>
         </div>
-        <button
-          onClick={handleNew}
-          className="px-4 py-2 text-sm font-medium bg-brand-500 text-white rounded-lg hover:bg-brand-600"
-        >
-          ＋ 新規作成
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setOcrOpen(true)}
+            className="px-4 py-2 text-sm font-medium bg-white text-brand-600 border border-brand-500 rounded-lg hover:bg-brand-50"
+          >
+            📷 OCR読み込み
+          </button>
+          <button
+            onClick={handleNew}
+            className="px-4 py-2 text-sm font-medium bg-brand-500 text-white rounded-lg hover:bg-brand-600"
+          >
+            ＋ 新規作成
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border overflow-hidden">
@@ -126,6 +136,20 @@ export default function DailyReportView({ dbGuards = [] }: { dbGuards?: GuardOpt
       {/* 印刷プレビュー */}
       {printing && (
         <DailyReportPrint report={printing} onClose={() => setPrinting(null)} />
+      )}
+
+      {/* OCRアップロード */}
+      {ocrOpen && (
+        <OcrUpload
+          guards={guards}
+          onCancel={() => setOcrOpen(false)}
+          onConfirm={(r) => {
+            // OCR結果をそのまま編集フォームへ流し込み、ユーザーが確認・修正して保存
+            setOcrOpen(false);
+            setEditing(r);
+            setMode("new");
+          }}
+        />
       )}
     </div>
   );
